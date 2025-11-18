@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SaaSBot Widget Demo</title>
+</head>
+<body>
+  <div style="max-width: 800px; margin: 0 auto; padding: 40px;">
+    <h1>SaaSBot Widget Demo</h1>
+    <p>This page demonstrates the embeddable chat widget.</p>
+    <p>The chat bubble should appear in the bottom right corner.</p>
+  </div>
+
+  <!-- Widget Script -->
+  <script 
+    src="/src/widget.tsx" 
+    type="module"
+    data-api-key="your-api-key-here"
+    data-api-url="http://localhost:8000"
+    data-theme="light"
+    data-position="bottom-right"
+  ></script>
+</body>
+</html>
