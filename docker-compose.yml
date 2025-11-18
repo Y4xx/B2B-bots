@@ -1,0 +1,186 @@
+version: '3.8'
+
+services:
+  # Laravel Backend
+  laravel-app:
+    build:
+      context: ./backend-laravel
+      dockerfile: Dockerfile
+    container_name: saasbot-laravel
+    restart: unless-stopped
+    working_dir: /var/www
+    volumes:
+      - ./backend-laravel:/var/www
+      - ./backend-laravel/storage:/var/www/storage
+    environment:
+      - APP_ENV=${APP_ENV:-production}
+      - APP_DEBUG=${APP_DEBUG:-false}
+      - DB_HOST=mysql
+      - REDIS_HOST=redis
+      - QUEUE_CONNECTION=redis
+    networks:
+      - saasbot-network
+    depends_on:
+      - mysql
+      - redis
+    ports:
+      - "8000:8000"
+
+  # Laravel Horizon (Queue Worker)
+  laravel-horizon:
+    build:
+      context: ./backend-laravel
+      dockerfile: Dockerfile
+    container_name: saasbot-horizon
+    restart: unless-stopped
+    working_dir: /var/www
+    volumes:
+      - ./backend-laravel:/var/www
+    command: php artisan horizon
+    environment:
+      - APP_ENV=${APP_ENV:-production}
+      - DB_HOST=mysql
+      - REDIS_HOST=redis
+    networks:
+      - saasbot-network
+    depends_on:
+      - mysql
+      - redis
+
+  # MySQL Database
+  mysql:
+    image: mysql:8.0
+    container_name: saasbot-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:-saasbot}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-secret}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-secret}
+      MYSQL_USER: ${DB_USERNAME:-saasbot}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks:
+      - saasbot-network
+    ports:
+      - "3306:3306"
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: saasbot-redis
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    networks:
+      - saasbot-network
+    ports:
+      - "6379:6379"
+
+  # Python Scraper Service
+  python-scraper:
+    build:
+      context: ./python-services/scraper
+      dockerfile: Dockerfile
+    container_name: saasbot-scraper
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LARAVEL_CALLBACK_URL=${LARAVEL_CALLBACK_URL:-http://laravel-app:8000/api/webhooks/scraper}
+    networks:
+      - saasbot-network
+    ports:
+      - "8001:8000"
+
+  # Python AI Indexer Service
+  python-indexer:
+    build:
+      context: ./python-services/indexer
+      dockerfile: Dockerfile
+    container_name: saasbot-indexer
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - QDRANT_HOST=${QDRANT_HOST:-qdrant}
+      - QDRANT_PORT=${QDRANT_PORT:-6333}
+    networks:
+      - saasbot-network
+    depends_on:
+      - qdrant
+    ports:
+      - "8002:8000"
+
+  # Python RAG Chatbot Service
+  python-rag:
+    build:
+      context: ./python-services/rag-chatbot
+      dockerfile: Dockerfile
+    container_name: saasbot-rag
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - QDRANT_HOST=${QDRANT_HOST:-qdrant}
+      - QDRANT_PORT=${QDRANT_PORT:-6333}
+    networks:
+      - saasbot-network
+    depends_on:
+      - qdrant
+    ports:
+      - "8003:8000"
+
+  # Qdrant Vector Database
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: saasbot-qdrant
+    restart: unless-stopped
+    volumes:
+      - qdrant-data:/qdrant/storage
+    networks:
+      - saasbot-network
+    ports:
+      - "6333:6333"
+
+  # React Frontend (Development)
+  react-frontend:
+    build:
+      context: ./frontend-react
+      dockerfile: Dockerfile.dev
+    container_name: saasbot-frontend
+    restart: unless-stopped
+    volumes:
+      - ./frontend-react:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=${VITE_API_URL:-http://localhost:8000}
+    networks:
+      - saasbot-network
+    ports:
+      - "5173:5173"
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: saasbot-nginx
+    restart: unless-stopped
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./infra/nginx/conf.d:/etc/nginx/conf.d
+      - ./widget/dist:/var/www/widget
+    networks:
+      - saasbot-network
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - laravel-app
+      - react-frontend
+
+networks:
+  saasbot-network:
+    driver: bridge
+
+volumes:
+  mysql-data:
+  redis-data:
+  qdrant-data:
